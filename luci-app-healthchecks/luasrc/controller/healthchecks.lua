@@ -1,5 +1,7 @@
 module("luci.controller.healthchecks", package.seeall)
 
+local nixio = require("nixio")
+
 function index()
     if not nixio.fs.access("/etc/config/healthchecks") then
         return
@@ -7,7 +9,7 @@ function index()
 
     entry(
         {"admin", "services", "healthchecks"},
-        view("healthchecks/main"),
+        cbi("healthchecks/main"),
         "Healthchecks.io",
         60
     ).dependent = true

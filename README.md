@@ -41,7 +41,7 @@ Requirements:
 ```sh
 # Clone repository
 git clone https://github.com/mysterious1der/router-pings.git
-cd luci-app-healthchecks-openwrt
+cd router-pings
 
 # Copy to your OpenWrt SDK
 cp -r healthchecks /path/to/openwrt-sdk/package/
@@ -79,7 +79,7 @@ uci set healthchecks.main.enabled='1'
 # Set your Healthchecks.io URL
 uci set healthchecks.main.url='https://hc-ping.com/your-uuid-here'
 
-# Set ping interval (in minutes)
+# Set ping interval in minutes (default: 5)
 uci set healthchecks.main.interval_minutes='5'
 
 # Save and apply
@@ -218,5 +218,5 @@ Healthchecks.io is a service by [Healthchecks.io](https://healthchecks.io/)
 
 ## Support
 
-- Issues: https://github.com/yourusername/luci-app-healthchecks-openwrt/issues
+- Issues: https://github.com/mysterious1der/router-pings/issues
 - Healthchecks.io documentation: https://healthchecks.io/docs/

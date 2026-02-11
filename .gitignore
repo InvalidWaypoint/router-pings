@@ -1,5 +1,5 @@
 .DS_Store
 *.ipk.bak
 build_dir/
-bin/
+/bin/
 tmp/
