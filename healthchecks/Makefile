@@ -15,7 +15,7 @@ define Package/healthchecks
   CATEGORY:=Network
   TITLE:=Healthchecks.io heartbeat client for OpenWrt
   URL:=https://healthchecks.io/
-  DEPENDS:=+curl
+  DEPENDS:=+wget
   PKGARCH:=all
 endef
 

@@ -1,4 +1,4 @@
 config healthchecks 'main'
     option enabled '0'
-    option ping_url ''
+    option url ''
     option interval_minutes '5'

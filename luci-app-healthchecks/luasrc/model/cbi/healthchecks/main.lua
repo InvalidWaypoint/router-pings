@@ -1,5 +1,5 @@
 local m = Map("healthchecks", translate("Healthchecks.io"),
-    translate("Configure periodic pings to your Healthchecks.io slug."))
+    translate("Configure the Healthchecks.io heartbeat client."))
 
 local s = m:section(TypedSection, "healthchecks", translate("Main settings"))
 s.anonymous = true
@@ -9,16 +9,16 @@ s.addremove = false
 local enabled = s:option(Flag, "enabled", translate("Enable"))
 enabled.rmempty = false
 
--- Slug input
-local slug = s:option(Value, "slug", translate("Slug"),
-    translate("Paste the Healthchecks.io UUID or path segment, e.g. 'project-key/my-router'."))
-slug.datatype = "string"
-slug.rmempty = false
+-- Ping URL
+local url = s:option(Value, "url", translate("Ping URL"),
+    translate("Your full Healthchecks.io ping URL, e.g. 'https://hc-ping.com/your-uuid-here'."))
+url.datatype = "string"
+url.rmempty = false
 
--- Interval in seconds
-local interval = s:option(Value, "interval", translate("Ping interval (seconds)"))
+-- Interval in minutes
+local interval = s:option(Value, "interval_minutes", translate("Ping interval (minutes)"))
 interval.datatype = "uinteger"
-interval.default = "60"
+interval.default = "5"
 interval.rmempty = false
 
 return m
