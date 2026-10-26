@@ -1,47 +1,92 @@
 #!/bin/sh
+# Heartbeat loop for Healthchecks.io, started by /etc/init.d/healthchecks.
+# The init script validates the config and passes it in the environment:
+#   HC_URL       https:// ping URL (a secret: never logged)
+#   HC_INTERVAL  minutes between pings (1-1440)
+#   HC_VERBOSE   1 = log every ping, otherwise log only state changes
 
-. /lib/functions.sh
+TAG=healthchecks
+# While pings keep failing, repeat the warning about every 12 hours.
+REMIND_MINUTES=720
 
-logger -t healthchecks "Service started"
-
-get_config() {
-    config_get enabled "$1" enabled 0
-    config_get url "$1" url ""
-    config_get interval_minutes "$1" interval_minutes 5
+log() {
+	logger -t "$TAG" -p "daemon.$1" "$2"
 }
 
-# Main loop
-while true; do
-    # Re-read config on each iteration
-    enabled=""
-    url=""
-    interval_minutes=""
+case "$HC_URL" in
+	https://?*) ;;
+	*) log err "HC_URL must be an https:// URL"; exit 1 ;;
+esac
+case "$HC_INTERVAL" in
+	''|*[!0-9]*|0*) log err "HC_INTERVAL must be a whole number of minutes"; exit 1 ;;
+esac
 
-    config_load healthchecks
-    config_foreach get_config healthchecks
+authority=${HC_URL#https://}
+authority=${authority%%[/?]*}
+host=${authority##*@}
+# Path and query identify the check, so they are as secret as the whole URL.
+secret=${HC_URL#https://"$authority"}
 
-    # Skip if disabled
-    if [ "$enabled" != "1" ]; then
-        logger -t healthchecks "Service disabled, sleeping 60s"
-        sleep 60
-        continue
-    fi
+# Print $1 with every occurrence of $2 replaced by <redacted>.
+redact() {
+	local text="$1" out=""
 
-    # Skip if no URL
-    if [ -z "$url" ]; then
-        logger -t healthchecks "No URL configured, sleeping 60s"
-        sleep 60
-        continue
-    fi
+	while :; do
+		case "$text" in
+			*"$2"*)
+				out="$out${text%%"$2"*}<redacted>"
+				text=${text#*"$2"}
+				;;
+			*) break ;;
+		esac
+	done
+	printf '%s' "$out$text"
+}
 
-    # Ping
-    if wget -q -O /dev/null "$url" 2>&1; then
-        logger -t healthchecks "Ping successful (interval: ${interval_minutes}m)"
-    else
-        logger -t healthchecks "Ping failed"
-    fi
+# One-line reason for a failed ping ($1 = uclient-fetch output, $2 = exit code).
+# Only known error lines are kept, never "Downloading '<url>'" or progress lines.
+describe() {
+	local text
 
-    # Sleep for configured interval
-    interval_seconds=$((interval_minutes * 60))
-    sleep "$interval_seconds"
+	text=$(printf '%s\n' "$1" | grep -E '^(HTTP error|Connection |SSL |Failed|Error|[^ ]*uclient-fetch: )' | tr '\n' ' ')
+	text=$(redact "$text" "$HC_URL")
+	[ "${#secret}" -gt 1 ] && text=$(redact "$text" "$secret")
+	text=${text% }
+	[ -n "$text" ] || text="uclient-fetch exit code $2"
+	printf '%s' "$text" | cut -c1-200
+}
+
+remind_every=$(( (REMIND_MINUTES + HC_INTERVAL - 1) / HC_INTERVAL ))
+failed=0
+child=
+
+trap '[ -n "$child" ] && kill "$child" 2>/dev/null; exit 0' TERM INT
+
+log info "Started: pinging $host every $HC_INTERVAL min"
+
+while :; do
+	# Not -q: quiet mode also hides the HTTP status and connection errors.
+	if out=$(uclient-fetch -T 30 -O /dev/null -- "$HC_URL" 2>&1); then
+		if [ "$failed" -gt 0 ]; then
+			log notice "Ping to $host OK again after $failed failed attempt(s)"
+			failed=0
+		elif [ "$HC_VERBOSE" = 1 ]; then
+			log info "Ping to $host OK"
+		fi
+	else
+		rc=$?
+		failed=$((failed + 1))
+		if [ "$failed" -eq 1 ]; then
+			log warning "Ping to $host failed: $(describe "$out" "$rc")"
+		elif [ $(( (failed - 1) % remind_every )) -eq 0 ]; then
+			log warning "Ping to $host still failing after $failed attempts (about $(( (failed - 1) * HC_INTERVAL / 60 ))h): $(describe "$out" "$rc")"
+		elif [ "$HC_VERBOSE" = 1 ]; then
+			log info "Ping to $host failed again ($failed): $(describe "$out" "$rc")"
+		fi
+	fi
+
+	sleep $((HC_INTERVAL * 60)) &
+	child=$!
+	wait "$child"
+	child=
 done

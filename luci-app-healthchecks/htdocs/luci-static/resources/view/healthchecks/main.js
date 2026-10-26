@@ -1,102 +1,49 @@
 'use strict';
 'require view';
-'require uci';
-'require ui';
-'require fs';
+'require form';
+
+// Same rule as /etc/init.d/healthchecks: https:// and a conservative character set.
+var URL_PATTERN = /^https:\/\/[A-Za-z0-9._~:\/?=&%+-]+$/;
 
 return view.extend({
-    load: function() {
-        return uci.load('healthchecks');
-    },
-
     render: function() {
-        var enabled = uci.get('healthchecks', 'main', 'enabled') === '1';
-        var url = uci.get('healthchecks', 'main', 'url') || '';
-        var interval = uci.get('healthchecks', 'main', 'interval_minutes') || '5';
+        var m, s, o;
 
-        var m = E('div', { 'class': 'cbi-map' }, [
-            E('h2', {}, _('Healthchecks.io')),
-            E('div', { 'class': 'cbi-map-descr' }, _('Configure the Healthchecks.io heartbeat client.')),
+        m = new form.Map('healthchecks', _('Healthchecks.io'),
+            _('Sends a heartbeat to your Healthchecks.io check at a fixed interval. ' +
+              'Changes take effect after Save & Apply.'));
 
-            E('div', { 'class': 'cbi-section' }, [
-                E('div', { 'class': 'cbi-section-node' }, [
-                    E('div', { 'class': 'cbi-value' }, [
-                        E('label', { 'class': 'cbi-value-title' }, _('Enabled')),
-                        E('div', { 'class': 'cbi-value-field' }, [
-                            E('input', {
-                                id: 'hc-enabled',
-                                type: 'checkbox',
-                                checked: enabled
-                            })
-                        ])
-                    ]),
-                    E('div', { 'class': 'cbi-value' }, [
-                        E('label', { 'class': 'cbi-value-title' }, _('Ping URL')),
-                        E('div', { 'class': 'cbi-value-field' }, [
-                            E('input', {
-                                id: 'hc-url',
-                                type: 'text',
-                                style: 'width: 100%;',
-                                value: url,
-                                placeholder: 'https://hc-ping.com/your-uuid-here'
-                            })
-                        ])
-                    ]),
-                    E('div', { 'class': 'cbi-value' }, [
-                        E('label', { 'class': 'cbi-value-title' }, _('Interval (minutes)')),
-                        E('div', { 'class': 'cbi-value-field' }, [
-                            E('input', {
-                                id: 'hc-interval',
-                                type: 'number',
-                                min: '1',
-                                style: 'width: 6em;',
-                                value: interval
-                            })
-                        ])
-                    ])
-                ])
-            ])
-        ]);
+        s = m.section(form.NamedSection, 'main', 'healthchecks');
+        s.addremove = false;
 
-        return m;
-    },
+        o = s.option(form.Flag, 'enabled', _('Enabled'));
+        o.rmempty = false;
 
-    handleSave: function(ev) {
-        var enabled = document.getElementById('hc-enabled').checked ? '1' : '0';
-        var url = document.getElementById('hc-url').value.trim();
-        var interval = document.getElementById('hc-interval').value;
+        o = s.option(form.Value, 'url', _('Ping URL'),
+            _('Full https:// ping URL of your check. Treat it like a password.'));
+        o.password = true;
+        o.placeholder = 'https://hc-ping.com/your-uuid-here';
+        o.validate = function(section_id, value) {
+            if (value === '')
+                return (this.section.formvalue(section_id, 'enabled') === '1')
+                    ? _('Required while the service is enabled') : true;
 
-        uci.set('healthchecks', 'main', 'enabled', enabled);
-        uci.set('healthchecks', 'main', 'url', url);
-        uci.set('healthchecks', 'main', 'interval_minutes', interval);
+            if (!URL_PATTERN.test(value))
+                return _('Must be an https:// URL without spaces, quotes or brackets');
 
-        return uci.save().then(function() {
-            ui.addNotification(null, E('p', _('Configuration saved.')), 'info');
-        });
-    },
+            return true;
+        };
 
-    handleSaveApply: function(ev) {
-        var enabled = document.getElementById('hc-enabled').checked ? '1' : '0';
-        var url = document.getElementById('hc-url').value.trim();
-        var interval = document.getElementById('hc-interval').value;
+        o = s.option(form.Value, 'interval_minutes', _('Interval (minutes)'),
+            _('Whole number from 1 to 1440.'));
+        o.datatype = 'and(uinteger,range(1,1440))';
+        o.default = '5';
+        o.rmempty = false;
 
-        uci.set('healthchecks', 'main', 'enabled', enabled);
-        uci.set('healthchecks', 'main', 'url', url);
-        uci.set('healthchecks', 'main', 'interval_minutes', interval);
+        o = s.option(form.Flag, 'verbose', _('Log every ping'),
+            _('For troubleshooting. Normally only failures, recoveries and a 12-hour reminder are logged.'));
+        o.rmempty = false;
 
-        return uci.save().then(function() {
-            return uci.apply().then(function() {
-                ui.addNotification(null, E('p', _('Configuration applied.')), 'info');
-                return fs.exec('/etc/init.d/healthchecks', ['restart']).catch(function() {
-                    // Service restart attempted
-                });
-            });
-        });
-    },
-
-    handleReset: function() {
-        return uci.load('healthchecks').then(L.bind(function() {
-            window.location.reload();
-        }, this));
+        return m.render();
     }
 });

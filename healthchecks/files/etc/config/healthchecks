@@ -1,4 +1,5 @@
 config healthchecks 'main'
-    option enabled '0'
-    option url ''
-    option interval_minutes '5'
+	option enabled '0'
+	option url ''
+	option interval_minutes '5'
+	option verbose '0'

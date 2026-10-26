@@ -1,0 +1,14 @@
+{
+    "admin/services/healthchecks": {
+        "title": "Healthchecks.io",
+        "order": 60,
+        "action": {
+            "type": "view",
+            "path": "healthchecks/main"
+        },
+        "depends": {
+            "acl": [ "luci-app-healthchecks" ],
+            "uci": { "healthchecks": true }
+        }
+    }
+}
