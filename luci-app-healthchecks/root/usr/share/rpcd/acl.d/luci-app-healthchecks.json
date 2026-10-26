@@ -1,14 +1,11 @@
 {
     "luci-app-healthchecks": {
-        "description": "Grant access to healthchecks UCI config and service control",
+        "description": "Grant access to healthchecks UCI config",
         "read": {
             "uci": [ "healthchecks" ]
         },
         "write": {
-            "uci": [ "healthchecks" ],
-            "file": {
-                "/etc/init.d/healthchecks restart": [ "exec" ]
-            }
+            "uci": [ "healthchecks" ]
         }
     }
 }
