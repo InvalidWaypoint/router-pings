@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=healthchecks
-PKG_VERSION:=0.1.1
+PKG_VERSION:=0.2.0
 PKG_RELEASE:=1
 
 PKG_LICENSE:=MIT
@@ -15,12 +15,17 @@ define Package/healthchecks
   CATEGORY:=Network
   TITLE:=Healthchecks.io heartbeat client for OpenWrt
   URL:=https://healthchecks.io/
-  DEPENDS:=+wget
+  DEPENDS:=+uclient-fetch +ca-bundle
+  USERID:=healthchecks:healthchecks
   PKGARCH:=all
 endef
 
 define Package/healthchecks/description
 A minimal client that periodically pings a Healthchecks.io URL from your router.
+endef
+
+define Package/healthchecks/conffiles
+/etc/config/healthchecks
 endef
 
 define Build/Compile
@@ -38,21 +43,11 @@ define Package/healthchecks/install
 	$(INSTALL_BIN) ./files/etc/init.d/healthchecks $(1)/etc/init.d/healthchecks
 endef
 
+# default_postinst only starts the service, which leaves a running worker on
+# the old code after an upgrade.
 define Package/healthchecks/postinst
 #!/bin/sh
-[ -n "$${IPKG_INSTROOT}" ] || {
-	/etc/init.d/healthchecks enable
-	/etc/init.d/healthchecks start
-}
-exit 0
-endef
-
-define Package/healthchecks/prerm
-#!/bin/sh
-[ -n "$${IPKG_INSTROOT}" ] || {
-	/etc/init.d/healthchecks stop
-	/etc/init.d/healthchecks disable
-}
+[ -n "$${IPKG_INSTROOT}" ] || [ "$${PKG_UPGRADE}" != "1" ] || /etc/init.d/healthchecks restart
 exit 0
 endef
 

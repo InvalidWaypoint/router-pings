@@ -3,9 +3,69 @@
 START=95
 USE_PROCD=1
 
+PROG=/usr/bin/healthchecks-ping
+
+# Matches a URL containing anything outside this conservative character set
+# (no spaces, quotes, brackets or control characters).
+URL_BAD_CHARS='*[!A-Za-z0-9._~:/?=&%+-]*'
+
+log_not_started() {
+	logger -t healthchecks -p daemon.err "Not started: $*"
+}
+
+have_ca_certs() {
+	local f
+
+	for f in /etc/ssl/certs/*.crt; do
+		[ -e "$f" ] && return 0
+	done
+	return 1
+}
+
 start_service() {
+	local enabled url interval verbose
+
+	config_load healthchecks
+	config_get_bool enabled main enabled 0
+	config_get url main url
+	config_get interval main interval_minutes 5
+	config_get_bool verbose main verbose 0
+
+	# Disabled: run nothing and log nothing.
+	[ "$enabled" = 1 ] || return 0
+
+	case "$url" in
+		https://?*) ;;
+		*) log_not_started "ping URL must start with https://"; return 1 ;;
+	esac
+	# shellcheck disable=SC2254 # URL_BAD_CHARS is a glob pattern on purpose
+	case "$url" in
+		$URL_BAD_CHARS) log_not_started "ping URL contains characters that are not allowed"; return 1 ;;
+	esac
+
+	# Strip leading zeros so the shell never reads the value as octal.
+	interval=${interval#"${interval%%[!0]*}"}
+	case "$interval" in
+		''|*[!0-9]*|?????*) interval=0 ;;
+	esac
+	if [ "$interval" -lt 1 ] || [ "$interval" -gt 1440 ]; then
+		log_not_started "interval_minutes must be a whole number from 1 to 1440"
+		return 1
+	fi
+
+	if ! have_ca_certs; then
+		log_not_started "no CA certificates in /etc/ssl/certs (install ca-bundle)"
+		return 1
+	fi
+
 	procd_open_instance
-	procd_set_param command /usr/bin/healthchecks-ping
+	procd_set_param command "$PROG"
+	procd_set_param env HC_URL="$url" HC_INTERVAL="$interval" HC_VERBOSE="$verbose"
+	# procd misses env changes that keep a value's length (e.g. interval 5 -> 7),
+	# so restart whenever the config file changes.
+	procd_set_param file /etc/config/healthchecks
+	procd_set_param user healthchecks
+	procd_set_param group healthchecks
 	procd_set_param respawn
 	procd_close_instance
 }
