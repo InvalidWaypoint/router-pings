@@ -1,5 +1,8 @@
 .DS_Store
 *.ipk.bak
+# Built packages are published as GitHub release assets, not committed.
+*.apk
+*.ipk
 build_dir/
 /bin/
 tmp/

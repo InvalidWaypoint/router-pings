@@ -1,210 +1,150 @@
-![Alt text](/screenshot.png?raw=true "Screenshot of LuCI Plugin")
-# Healthchecks.io Client for OpenWrt and GL.iNet
+# Healthchecks.io Client for OpenWrt
 
-A lightweight [Healthchecks.io](https://healthchecks.io/) heartbeat monitoring client for OpenWrt and GL.iNet routers, with optional LuCI web interface.
+A small [Healthchecks.io](https://healthchecks.io/) heartbeat client for OpenWrt routers, with an optional LuCI page.
+
+This is a hardened fork of [mysterious1der/router-pings](https://github.com/mysterious1der/router-pings) for OpenWrt 25.12 and newer (apk package manager).
 
 ## Features
 
-- Periodic ping to Healthchecks.io URLs
--️ Web-based configuration via LuCI (on supported firmware)
-- UCI-based configuration for all routers
-- Architecture-independent (works on any OpenWrt router)
-- Minimal dependencies (just `wget`)
-- Auto-starts on boot
-- Configuration changes apply automatically without restart
+- Pings your Healthchecks.io check every 1 to 1440 minutes
+- HTTPS only, with certificate verification (`uclient-fetch` + `ca-bundle`)
+- Runs as the unprivileged system user `healthchecks`, not as root
+- Quiet log: one line at start, one when pings start failing, one when they recover, and a reminder every 12 hours while they keep failing
+- Settings are checked before the service starts; invalid settings are refused with one clear log line
+- LuCI page (JavaScript, no Lua) with input validation; Save & Apply restarts the service
+- Architecture-independent (`noarch`)
+
+## Requirements
+
+- OpenWrt 25.12 or newer. Tested on OpenWrt 25.12.5; older releases are untested.
+- `uclient-fetch`, `ca-bundle` and a TLS library for `uclient-fetch` (`libustream-mbedtls`), all part of standard images
+- `luci-base` for the web page (optional)
 
 ## Installation
 
-### Quick Install
+### From a GitHub release
 
-Download and install both packages:
-
-```sh
-# SSH into router and download packages
-wget https://github.com/mysterious1der/router-pings/raw/refs/heads/main/releases/healthchecks_0.1.1-1_all.ipk
-wget https://github.com/mysterious1der/router-pings/raw/refs/heads/main/releases/luci-app-healthchecks_0.1.1-1_all.ipk
-
-# Install
-opkg update
-opkg install healthchecks_0.1.1-1_all.ipk
-opkg install luci-app-healthchecks_0.1.1-1_all.ipk
-```
-
-The service will start automatically after installation.
-
-### Build from Source
-
-Requirements:
-- OpenWrt SDK for your target architecture
-- Standard build tools
+Download both packages from the [releases page](https://github.com/InvalidWaypoint/router-pings/releases), check them against the SHA-256 checksums in the release notes, and install:
 
 ```sh
-# Clone repository
-git clone https://github.com/mysterious1der/router-pings.git
-cd router-pings
+cd /tmp
+wget -O healthchecks-0.2.0-r1.apk https://github.com/InvalidWaypoint/router-pings/releases/download/v0.2.0/healthchecks-0.2.0-r1.apk
+wget -O luci-app-healthchecks-0.2.0-r1.apk https://github.com/InvalidWaypoint/router-pings/releases/download/v0.2.0/luci-app-healthchecks-0.2.0-r1.apk
+sha256sum healthchecks-0.2.0-r1.apk luci-app-healthchecks-0.2.0-r1.apk
 
-# Copy to your OpenWrt SDK
-cp -r healthchecks /path/to/openwrt-sdk/package/
-cp -r luci-app-healthchecks /path/to/openwrt-sdk/package/
-
-# Build
-cd /path/to/openwrt-sdk
-make package/healthchecks/compile
-make package/luci-app-healthchecks/compile
-
-# Find packages in bin/packages/*/base/
+apk add --allow-untrusted ./healthchecks-0.2.0-r1.apk ./luci-app-healthchecks-0.2.0-r1.apk
 ```
+
+`--allow-untrusted` is needed because the packages are not signed with an OpenWrt key. The service is installed disabled; it starts once you enable it (see below).
+
+### Build from source
+
+Use an OpenWrt 25.12 SDK for any target (the packages are architecture-independent), for example the official Docker image:
+
+```sh
+git clone https://github.com/InvalidWaypoint/router-pings.git
+docker run --rm -it -v "$PWD/router-pings:/src:ro" openwrt/sdk:mediatek-filogic-v25.12.5 bash
+
+# inside the container
+cp -r /src/healthchecks /src/luci-app-healthchecks package/
+./scripts/feeds update base luci
+./scripts/feeds install uclient-fetch ca-bundle luci-base
+make defconfig
+make package/healthchecks/compile package/luci-app-healthchecks/compile
+ls bin/packages/*/base/*healthchecks*
+```
+
+The feeds are needed so the dependencies are recorded in the packages. The first build takes a while because the SDK also builds `luci-base` and its dependencies.
 
 ## Configuration
 
-### Newer Routers -> Via LuCI Web Interface
+### LuCI
 
-Navigate to **Services → Healthchecks.io** in your LuCI web interface.
+Go to **Services → Healthchecks.io**, set the ping URL, tick **Enabled** and click **Save & Apply**.
 
-Configure:
-- **Enabled**: Check to enable the service
-- **Ping URL**: Your Healthchecks.io ping URL (e.g., `https://hc-ping.com/your-uuid-here`)
-- **Interval**: How often to ping (in minutes)
-
-Click **Save & Apply** to activate changes.
-
-**Note:** LuCI interface requires standard OpenWrt or newer GL.iNet firmware. Older GL.iNet firmware can still use UCI configuration (see below).
-
-### Older Routers/Any OpenWRT Router -> Via UCI Command Line 
+### Command line
 
 ```sh
-# Enable the service
-uci set healthchecks.main.enabled='1'
-
-# Set your Healthchecks.io URL
 uci set healthchecks.main.url='https://hc-ping.com/your-uuid-here'
-
-# Set ping interval in minutes (default: 5)
 uci set healthchecks.main.interval_minutes='5'
-
-# Save and apply
+uci set healthchecks.main.enabled='1'
 uci commit healthchecks
-```
-
-Changes take effect automatically within the current interval period (no restart required).
-
-### Manual Service Control
-
-```sh
-# Start service
-/etc/init.d/healthchecks start
-
-# Stop service
-/etc/init.d/healthchecks stop
-
-# Restart service
 /etc/init.d/healthchecks restart
-
-# Enable on boot
-/etc/init.d/healthchecks enable
-
-# Disable on boot
-/etc/init.d/healthchecks disable
 ```
 
-## Monitoring
+| Option | Default | Allowed values |
+|---|---|---|
+| `enabled` | `0` | `0` or `1` |
+| `url` | empty | `https://` URL made of letters, digits and `. _ ~ : / ? = & % + -` |
+| `interval_minutes` | `5` | whole number from 1 to 1440 |
+| `verbose` | `0` | `1` logs every ping (for troubleshooting) |
 
-View service logs:
+### Service control
 
 ```sh
-logread | grep healthchecks
+/etc/init.d/healthchecks start|stop|restart
+/etc/init.d/healthchecks enable|disable   # start at boot or not
 ```
 
-Or watch in real-time:
+With `enabled '0'` the service runs nothing and logs nothing.
+
+## Logging
 
 ```sh
-logread -f | grep healthchecks
+logread -e healthchecks
 ```
 
-You should see messages like:
+Typical lines:
+
 ```
-healthchecks: Ping successful (interval: 5m)
+daemon.info healthchecks: Started: pinging hc-ping.com every 5 min
+daemon.warn healthchecks: Ping to hc-ping.com failed: HTTP error 500
+daemon.warn healthchecks: Ping to hc-ping.com still failing after 145 attempts (about 12h): HTTP error 500
+daemon.notice healthchecks: Ping to hc-ping.com OK again after 300 failed attempt(s)
+daemon.err healthchecks: Not started: ping URL must start with https://
 ```
 
-## Compatibility
+Only the host name is logged, never the full ping URL.
 
-### Tested On
-- GL.iNet GL-MT6000 (OpenWrt 23.05)
-- GL.iNet GL-AXT1800 (GL.iNet firmware 4.x)
+## Security notes
 
-### Requirements
-- OpenWrt 21.02 or newer
-- `wget` (included in most OpenWrt builds)
-- LuCI (optional, for web interface)
+- The ping URL is a secret: anyone who has it can report your check as up or down. `/etc/config/healthchecks` is readable by root only, the URL reaches the worker through its environment (readable only by the `healthchecks` user) and it is never logged. It is visible in the process list for the second or so each ping takes.
+- The worker runs as the system user `healthchecks`, created when the package is installed.
+- Pings use HTTPS with certificate verification. The service refuses to start without CA certificates in `/etc/ssl/certs`.
+- The LuCI page can read and write the `healthchecks` config only. It has no permission to run commands.
 
-### GL.iNet Compatibility
-- **Newer models** (MT6000, etc.): Full LuCI interface works
-- **Older firmware** (4.x): Backend works perfectly, configure via UCI
-- All GL.iNet or OpenWRT routers can use the service, just some need UCI configuration
+## Updating
+
+Install the newer packages the same way (`apk add --allow-untrusted ./<new>.apk ...`). The service restarts on the new version and your settings are kept. If you had changed them, the new default config is written next to yours as `/etc/config/healthchecks.apk-new`, which you can delete.
+
+## Firmware upgrades
+
+These packages are installed from local files, not from the OpenWrt package feeds, so a firmware upgrade (sysupgrade or Attended Sysupgrade) does not bring them back. Reinstall both packages after an upgrade and check that `/etc/config/healthchecks` is still there.
 
 ## Uninstallation
 
 ```sh
-opkg remove luci-app-healthchecks
-opkg remove healthchecks
+apk del luci-app-healthchecks healthchecks
 ```
 
-Configuration file `/etc/config/healthchecks` will be preserved. To remove it:
+Like other OpenWrt packages, this keeps your `/etc/config/healthchecks` (it contains your ping URL) and the `healthchecks` system user. To remove them as well:
 
 ```sh
 rm /etc/config/healthchecks
+sed -i '/^healthchecks:/d' /etc/passwd /etc/shadow /etc/group
 ```
 
 ## Troubleshooting
 
-### Service not starting
-Check if it's enabled:
-```sh
-uci show healthchecks.main.enabled
-```
+- **No log line after enabling:** check `uci get healthchecks.main.enabled` and restart the service.
+- **`Not started: ...`:** fix the setting named in the message and restart.
+- **Test the URL by hand:** `uclient-fetch -O /dev/null "$(uci get healthchecks.main.url)"`. This prints the full URL, so don't paste the output anywhere public.
+- **LuCI menu entry missing:** `rm -f /tmp/luci-indexcache.*; /etc/init.d/rpcd reload`, then reload the page.
 
-Should show `'1'`. If not, enable it:
-```sh
-uci set healthchecks.main.enabled='1'
-uci commit healthchecks
-/etc/init.d/healthchecks restart
-```
+## How it works
 
-### Pings not appearing on Healthchecks.io
-1. Verify your URL is correct:
-   ```sh
-   uci show healthchecks.main.url
-   ```
-
-2. Test manually:
-   ```sh
-   wget -O- "$(uci get healthchecks.main.url)"
-   ```
-
-3. Check logs for errors:
-   ```sh
-   logread | grep healthchecks
-   ```
-
-### LuCI menu not appearing
-- GL.iNet older firmware: Use UCI configuration instead
-- Clear LuCI cache and restart:
-  ```sh
-  rm -rf /tmp/luci-*
-  /etc/init.d/uhttpd restart
-  ```
-
-## How It Works
-
-The `healthchecks-ping` service runs continuously in the background:
-1. Reads configuration from `/etc/config/healthchecks`
-2. Sends HTTP GET request to your Healthchecks.io URL
-3. Sleeps for the configured interval
-4. Repeats (re-reading config each cycle for instant updates)
-
-## Contributing
-
-Contributions welcome! Please open an issue or pull request on GitHub.
+1. `/etc/init.d/healthchecks` reads and checks the settings, then starts `/usr/bin/healthchecks-ping` under procd as the user `healthchecks`. procd restarts it when `/etc/config/healthchecks` changes.
+2. The worker sends an HTTPS GET to the ping URL (30 second timeout), waits for the interval and repeats.
 
 ## License
 
@@ -212,11 +152,6 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Credits
 
-Created by Jirah Cox
+Created by Jirah Cox. Hardened for OpenWrt 25.12 in this fork.
 
-Healthchecks.io is a service by [Healthchecks.io](https://healthchecks.io/)
-
-## Support
-
-- Issues: https://github.com/mysterious1der/router-pings/issues
-- Healthchecks.io documentation: https://healthchecks.io/docs/
+Healthchecks.io is a service by [Healthchecks.io](https://healthchecks.io/).
